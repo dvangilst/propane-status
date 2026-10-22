@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Levac Propane (AirStatement)",
+        "description": "Enter your credentials for the Levac Propane AirStatement portal (https://levac-airstatement.datanovacloudapps.com).",
+        "data": {
+          "username": "Email / Username",
+          "password": "Password",
+          "scan_interval": "Update Interval (minutes)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the AirStatement server.",
+      "invalid_auth": "Invalid email or password.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This Levac Propane account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Levac Propane Options",
+        "description": "Configure polling settings.",
+        "data": {
+          "scan_interval": "Update Interval (minutes)"
+        }
+      }
+    }
+  }
+}
