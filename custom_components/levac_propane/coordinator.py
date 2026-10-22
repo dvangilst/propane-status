@@ -55,16 +55,17 @@ class LevacDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
             return parsed_tanks
 
         for addr_idx, address in enumerate(raw_addresses):
-            address_str = address.get("addressLine1") or address.get("street") or f"Location {addr_idx + 1}"
+            address_str = address.get("customerAddress") or address.get("addressLine1") or address.get("street") or f"Location {addr_idx + 1}"
             city = address.get("city") or ""
             full_address = f"{address_str}, {city}".strip(", ")
             customer_id = address.get("customerId") or address.get("id")
+            customer_name = address.get("customerName") or ""
 
             pesh_pact = address.get("peshPact") or []
             for pact_idx, pact in enumerate(pesh_pact):
-                # Unique ID: prefer pact ID, then shipAccountId, fallback to index
                 tank_id = str(pact.get("id") or pact.get("shipAccountId") or f"{customer_id}_{addr_idx}_{pact_idx}")
                 ship_account_id = str(pact.get("shipAccountId") or tank_id)
+                monitor_id = pact.get("tankMonitorId")
                 ship_type = pact.get("shipType")
 
                 max_capacity = pact.get("maxCapacity") or 0.0
@@ -74,7 +75,7 @@ class LevacDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
                     max_capacity = 0.0
 
                 product_info = pact.get("pEserv") or {}
-                product_desc = product_info.get("productDesc") or "Propane"
+                product_desc = product_info.get("productDesc") or "PROPANE"
 
                 tank_sub = pact.get("tanks") or {}
                 percentage_val = tank_sub.get("currentPercentage")
@@ -91,6 +92,8 @@ class LevacDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
                 except (ValueError, TypeError):
                     unit_price = None
 
+                last_measured_at = tank_sub.get("lastMesuredAt")
+
                 # Liters currently in tank
                 current_liters_val = pact.get("currentTotalLiters")
                 current_liters: float | None = None
@@ -102,6 +105,11 @@ class LevacDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
                     divisor = 80.0 if is_propane else 100.0
                     current_liters = round(max_capacity * (current_percentage / divisor), 1)
 
+                # Delivery history & totals
+                last_delivery_date = pact.get("lastDeliveryDate")
+                last_delivery_liters = pact.get("lastDeliveryLiters")
+                last_year_total_liters = pact.get("lastYrTotalLiters")
+
                 # Order request details
                 order_req = pact.get("orderRequest") or {}
                 order_pending = bool(order_req.get("reqStatus") or order_req.get("requestQty"))
@@ -111,14 +119,20 @@ class LevacDataUpdateCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]
                 parsed_tanks[tank_id] = {
                     "tank_id": tank_id,
                     "ship_account_id": ship_account_id,
+                    "monitor_id": monitor_id,
                     "ship_type": ship_type,
                     "address": full_address,
                     "customer_id": customer_id,
+                    "customer_name": customer_name,
                     "product_desc": product_desc,
                     "max_capacity_liters": max_capacity,
                     "current_percentage": current_percentage,
                     "current_liters": current_liters,
                     "unit_price": unit_price,
+                    "last_reading": last_measured_at,
+                    "last_delivery_date": last_delivery_date,
+                    "last_delivery_liters": last_delivery_liters,
+                    "last_year_total_liters": last_year_total_liters,
                     "order_pending": order_pending,
                     "order_qty": order_qty,
                     "order_date": order_date,

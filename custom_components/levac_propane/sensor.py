@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -21,8 +22,13 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     ATTR_CURRENT_LITERS,
+    ATTR_LAST_DELIVERY_DATE,
+    ATTR_LAST_DELIVERY_LITERS,
+    ATTR_LAST_READING,
     ATTR_LAST_SYNC,
+    ATTR_LAST_YEAR_TOTAL_LITERS,
     ATTR_MAX_CAPACITY,
+    ATTR_MONITOR_ID,
     ATTR_ORDER_DATE,
     ATTR_ORDER_PENDING,
     ATTR_ORDER_QTY,
@@ -35,6 +41,20 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import LevacDataUpdateCoordinator
+
+
+def _parse_iso_datetime(dt_str: str | None) -> datetime | None:
+    """Safely parse ISO datetime string, setting UTC timezone if missing."""
+    if not dt_str or dt_str.startswith("1899") or dt_str.startswith("0001"):
+        return None
+    try:
+        dt = datetime.fromisoformat(dt_str)
+        if dt.tzinfo is None:
+            # Assume local/UTC
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, TypeError):
+        return None
 
 
 @dataclass(frozen=True)
@@ -56,11 +76,16 @@ SENSOR_DESCRIPTIONS: tuple[LevacSensorEntityDescription, ...] = (
         attr_fn=lambda tank: {
             ATTR_TANK_ID: tank.get("tank_id"),
             ATTR_SHIP_ACCOUNT_ID: tank.get("ship_account_id"),
+            ATTR_MONITOR_ID: tank.get("monitor_id"),
             ATTR_SHIP_TYPE: tank.get("ship_type"),
             ATTR_PRODUCT_DESC: tank.get("product_desc"),
             ATTR_MAX_CAPACITY: tank.get("max_capacity_liters"),
             ATTR_CURRENT_LITERS: tank.get("current_liters"),
             ATTR_UNIT_PRICE: tank.get("unit_price"),
+            ATTR_LAST_READING: tank.get("last_reading"),
+            ATTR_LAST_DELIVERY_DATE: tank.get("last_delivery_date"),
+            ATTR_LAST_DELIVERY_LITERS: tank.get("last_delivery_liters"),
+            ATTR_LAST_YEAR_TOTAL_LITERS: tank.get("last_year_total_liters"),
             ATTR_LAST_SYNC: tank.get("last_sync"),
         },
     ),
@@ -78,6 +103,13 @@ SENSOR_DESCRIPTIONS: tuple[LevacSensorEntityDescription, ...] = (
         },
     ),
     LevacSensorEntityDescription(
+        key="last_reading",
+        name="Last Reading",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:clock-check-outline",
+        value_fn=lambda tank: _parse_iso_datetime(tank.get("last_reading")),
+    ),
+    LevacSensorEntityDescription(
         key="capacity",
         name="Tank Capacity",
         native_unit_of_measurement=UnitOfVolume.LITERS,
@@ -93,6 +125,18 @@ SENSOR_DESCRIPTIONS: tuple[LevacSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.MONETARY,
         icon="mdi:currency-usd",
         value_fn=lambda tank: tank.get("unit_price"),
+        entity_registry_enabled_default=False,
+    ),
+    LevacSensorEntityDescription(
+        key="last_delivery",
+        name="Last Delivery",
+        native_unit_of_measurement=UnitOfVolume.LITERS,
+        icon="mdi:truck-check",
+        value_fn=lambda tank: tank.get("last_delivery_liters"),
+        attr_fn=lambda tank: {
+            ATTR_LAST_DELIVERY_DATE: tank.get("last_delivery_date"),
+            ATTR_LAST_DELIVERY_LITERS: tank.get("last_delivery_liters"),
+        },
         entity_registry_enabled_default=False,
     ),
     LevacSensorEntityDescription(
@@ -153,19 +197,19 @@ class LevacPropaneSensor(CoordinatorEntity[LevacDataUpdateCoordinator], SensorEn
         self._tank_id = tank_id
         self._entry = entry
 
-        # Unique ID combining entry_id, tank_id, and sensor key
         self._attr_unique_id = f"{entry.entry_id}_{tank_id}_{description.key}"
 
         tank_data = self.tank_data
         ship_account_id = tank_data.get("ship_account_id", tank_id)
         self._attr_name = f"Propane Tank {ship_account_id} {description.name}"
 
-        # Assign device info so all sensors for this tank group under one device
+        # Assign device info with hardware monitor serial number
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, tank_id)},
             name=f"Propane Tank {ship_account_id}",
             manufacturer="Levac Propane / DataNova",
-            model=f"{tank_data.get('product_desc', 'Propane')} Tank",
+            model=f"{tank_data.get('product_desc', 'PROPANE')} Tank",
+            serial_number=tank_data.get("monitor_id"),
             suggested_area=tank_data.get("address"),
             configuration_url=DEFAULT_ORIGIN,
         )
